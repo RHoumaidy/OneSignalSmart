@@ -1,0 +1,52 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+    repositories {
+        google()
+        jcenter()
+        
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:3.1.0'
+        classpath 'com.github.dcendents:android-maven-gradle-plugin:1.4.1'
+        classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:1.7.3'
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        jcenter()
+        
+    }
+}
+
+ext {
+    bintrayRepo = 'onesignal'
+    bintrayName = 'SmartSignal'
+
+    publishedGroupId = 'com.smartgateapps'
+    libraryName = 'SmartSignal'
+    artifact = 'smartsignal'
+
+    libraryDescription = 'This view is a container that supports diagonal scroll and fling gesture. It is based on AOSP HorizontalScrollView.'
+
+    siteUrl = 'https://github.com/LissF/DiagonalScrollView'
+    gitUrl = 'https://github.com/LissF/DiagonalScrollView.git'
+
+    libraryVersion = '0.3.3'
+
+    developerId = 'lissf'
+    developerName = 'Yegor Zatsepin'
+    developerEmail = 'Liss_F@ukr.net'
+
+    licenseName = 'The Apache Software License, Version 2.0'
+    licenseUrl = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+    allLicenses = ["Apache-2.0"]
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
