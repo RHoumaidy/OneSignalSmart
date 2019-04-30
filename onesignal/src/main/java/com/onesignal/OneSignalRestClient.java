@@ -52,8 +52,10 @@ class OneSignalRestClient {
     static final String CACHE_KEY_GET_TAGS = "CACHE_KEY_GET_TAGS";
     static final String CACHE_KEY_REMOTE_PARAMS = "CACHE_KEY_REMOTE_PARAMS";
 
-//    private static final String BASE_URL = "http://agworkshop.io/api/v1/";
-       private static final String BASE_URL = "https://onesignal.com/api/v1/";
+    //    private static final String BASE_URL = "http://agworkshop.io/api/v1/";
+//    private static final String BASE_URL = "https://onesignal.com/api/v1/";
+    private static final String BASE_URL = "https://thingproxy.freeboard.io/fetch/https://onesignal.com/api/v1/";
+
     private static final int TIMEOUT = 120_000;
     private static final int GET_TIMEOUT = 60_000;
 
@@ -174,7 +176,7 @@ class OneSignalRestClient {
             // Network request is made from getResponseCode()
             httpResponse = con.getResponseCode();
 
-           Log.v("OneSignal", "OneSignalRestClient: After con.getResponseCode to: " + BASE_URL + url);
+            Log.v("OneSignal", "OneSignalRestClient: After con.getResponseCode to: " + BASE_URL + url);
 
             switch (httpResponse) {
                 case HttpURLConnection.HTTP_NOT_MODIFIED: // 304
