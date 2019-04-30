@@ -2,24 +2,6 @@ apply plugin: 'com.android.library'
 apply plugin: 'com.github.dcendents.android-maven'
 apply plugin: 'com.jfrog.bintray'
 
-publish {
-
-    def groupProjectID = 'com.smartgateapps'
-    def artifactProjectID = 'smartsignal'
-    def publishVersionID = '3.10.8'
-
-    userOrg = 'rhoumaidy'
-    repoName = 'onesignal'
-    groupId = groupProjectID
-    artifactId = artifactProjectID
-    publishVersion = publishVersionID
-    desc = 'OneSignal Wrapper'
-    website = 'https://github.com/RHoumaidy/SmartSignal'
-
-}
-
-
-
 android {
     compileSdkVersion 27
     buildToolsVersion '27.0.3'
