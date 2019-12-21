@@ -39,6 +39,7 @@ class NotificationGenerationJob {
    Context context;
    JSONObject jsonPayload;
    boolean restoring;
+   boolean isInAppPreviewPush;
    
    boolean showAsAlert;
    
@@ -85,6 +86,17 @@ class NotificationGenerationJob {
       return overrideSettings.androidNotificationId;
    }
 
+   /**
+    * If notificationId is -1 then the notification is a silent one
+    */
+   boolean isNotificationToDisplay() {
+      return getAndroidIdWithoutCreate() != -1;
+   }
+
+   String getApiNotificationId() {
+      return OneSignal.getNotificationIdFromGCMJson(jsonPayload);
+   }
+
    void setAndroidIdWithOutOverriding(Integer id) {
       if (id == null)
          return;
@@ -100,4 +112,5 @@ class NotificationGenerationJob {
    boolean hasExtender() {
       return overrideSettings != null && overrideSettings.extender != null;
    }
+
 }

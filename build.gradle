@@ -4,14 +4,22 @@ buildscript {
     repositories {
         google()
         jcenter()
-        
+        maven { url 'https://maven.google.com' }
+        // OneSignal-Gradle-Plugin - Local testing
+//      maven { url uri('../../repo') }
+        // OneSignal-Gradle-Plugin - Public version
+//      maven { url 'https://plugins.gradle.org/m2/' }
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:3.1.0'
-        classpath 'com.github.dcendents:android-maven-gradle-plugin:2.0'
-        classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:1.7.3'
-        // NOTE: Do not place your application dependencies here; they belong
-        // in the individual module build.gradle files
+        classpath 'com.android.tools.build:gradle:3.5.0'
+
+        classpath 'com.google.gms:google-services:4.3.2'
+
+        // OneSignal-Gradle-Plugin - Local testing
+        // classpath 'com.onesignal:onesignal-gradle-plugin:[0.8.1, 0.99.99]'
+
+        // OneSignal-Gradle-Plugin - Public version
+        // classpath 'gradle.plugin.com.onesignal:onesignal-gradle-plugin:[0.8.1, 0.99.99]'
     }
 }
 
@@ -19,7 +27,10 @@ allprojects {
     repositories {
         google()
         jcenter()
-        
+        flatDir {
+            dirs 'libs'
+        }
+        maven { url 'https://maven.google.com' }
     }
 }
 
@@ -45,8 +56,4 @@ ext {
     licenseName = 'The Apache Software License, Version 2.0'
     licenseUrl = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
     allLicenses = ["Apache-2.0"]
-}
-
-task clean(type: Delete) {
-    delete rootProject.buildDir
 }

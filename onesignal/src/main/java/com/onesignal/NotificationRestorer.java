@@ -122,33 +122,11 @@ class NotificationRestorer {
       OneSignal.Log(OneSignal.LOG_LEVEL.INFO, "Restoring notifications");
 
       OneSignalDbHelper dbHelper = OneSignalDbHelper.getInstance(context);
-      deleteOldNotificationsFromDb(dbHelper);
 
       StringBuilder dbQuerySelection = OneSignalDbHelper.recentUninteractedWithNotificationsWhere();
       skipVisibleNotifications(context, dbQuerySelection);
 
       queryAndRestoreNotificationsAndBadgeCount(context, dbHelper, dbQuerySelection);
-   }
-
-   private static void deleteOldNotificationsFromDb(OneSignalDbHelper dbHelper) {
-      SQLiteDatabase writableDb = null;
-
-      try {
-         writableDb = dbHelper.getWritableDbWithRetries();
-         writableDb.beginTransaction();
-         NotificationBundleProcessor.deleteOldNotifications(writableDb);
-         writableDb.setTransactionSuccessful();
-      } catch (Throwable t) {
-         OneSignal.Log(OneSignal.LOG_LEVEL.ERROR, "Error deleting old notification records! ", t);
-      } finally {
-         if (writableDb != null) {
-            try {
-               writableDb.endTransaction(); // May throw if transaction was never opened or DB is full.
-            } catch (Throwable t) {
-               OneSignal.Log(OneSignal.LOG_LEVEL.ERROR, "Error closing transaction! ", t);
-            }
-         }
-      }
    }
 
    private static void queryAndRestoreNotificationsAndBadgeCount(
@@ -190,27 +168,18 @@ class NotificationRestorer {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M)
          return;
 
-      NotificationManager notifManager = (NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
+      StatusBarNotification[] activeNotifs = OneSignalNotificationManager.getActiveNotifications(context);
+      if (activeNotifs.length == 0)
+         return;
 
-      try {
-         StatusBarNotification[] activeNotifs = notifManager.getActiveNotifications();
-         if (activeNotifs.length == 0)
-            return;
+      ArrayList<Integer> activeNotifIds = new ArrayList<>();
+      for (StatusBarNotification activeNotif : activeNotifs)
+         activeNotifIds.add(activeNotif.getId());
 
-         ArrayList<Integer> activeNotifIds = new ArrayList<>();
-         for (StatusBarNotification activeNotif : activeNotifs)
-            activeNotifIds.add(activeNotif.getId());
-
-         dbQuerySelection
-                 .append(" AND " + NotificationTable.COLUMN_NAME_ANDROID_NOTIFICATION_ID + " NOT IN (")
-                 .append(TextUtils.join(",", activeNotifIds))
-                 .append(")");
-      } catch(Throwable t) {
-         // try-catch for Android 6.0.X bug work around,
-         //    getActiveNotifications sometimes throws an exception.
-         // Seem to be related to what Android's internal method getAppActiveNotifications returns.
-         // Issue #422
-      }
+      dbQuerySelection
+              .append(" AND " + NotificationTable.COLUMN_NAME_ANDROID_NOTIFICATION_ID + " NOT IN (")
+              .append(TextUtils.join(",", activeNotifIds))
+              .append(")");
    }
 
    /**

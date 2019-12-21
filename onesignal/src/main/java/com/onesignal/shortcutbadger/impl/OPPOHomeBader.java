@@ -23,7 +23,7 @@ import com.onesignal.shortcutbadger.util.BroadcastHelper;
 import com.onesignal.shortcutbadger.util.CloseHelper;
 
 /**
- * Created by NingSo on 2016/10/14
+ * Created by NingSo on 2016/10/14.上午10:09
  *
  * @author: NingSo
  * Email: ningso.ping@gmail.com
