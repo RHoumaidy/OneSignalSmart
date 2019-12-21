@@ -27,8 +27,11 @@
 
 package com.onesignal;
 
+import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
@@ -39,6 +42,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.v4.app.NotificationManagerCompat;
 import android.telephony.TelephonyManager;
 
@@ -46,16 +51,43 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.InputStream;
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Locale;
-import java.util.Scanner;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
+
+import static com.onesignal.OneSignal.Log;
 
 class OSUtils {
 
    static final int UNINITIALIZABLE_STATUS = -999;
+
+   public enum SchemaType {
+      DATA("data"),
+      HTTPS("https"),
+      HTTP("http"),
+      ;
+
+      private final String text;
+
+      SchemaType(final String text) {
+         this.text = text;
+      }
+
+      public static SchemaType fromString(String text) {
+         for (SchemaType type : SchemaType.values()) {
+            if (type.text.equalsIgnoreCase(text)) {
+               return type;
+            }
+         }
+         return null;
+      }
+   }
 
    int initializationChecker(Context context, int deviceType, String oneSignalAppId) {
       int subscribableStatus = 1;
@@ -64,13 +96,13 @@ class OSUtils {
          //noinspection ResultOfMethodCallIgnored
          UUID.fromString(oneSignalAppId);
       } catch (Throwable t) {
-         OneSignal.Log(OneSignal.LOG_LEVEL.FATAL, "OneSignal AppId format is invalid.\nExample: 'b2f7f966-d8cc-11e4-bed1-df8f05be55ba'\n", t);
+         Log(OneSignal.LOG_LEVEL.FATAL, "OneSignal AppId format is invalid.\nExample: 'b2f7f966-d8cc-11e4-bed1-df8f05be55ba'\n", t);
          return UNINITIALIZABLE_STATUS;
       }
 
       if ("b2f7f966-d8cc-11e4-bed1-df8f05be55ba".equals(oneSignalAppId) ||
           "5eb5a37e-b458-11e3-ac11-000c2940e62c".equals(oneSignalAppId))
-         OneSignal.Log(OneSignal.LOG_LEVEL.ERROR, "OneSignal Example AppID detected, please update to your app's id found on OneSignal.com");
+         Log(OneSignal.LOG_LEVEL.ERROR, "OneSignal Example AppID detected, please update to your app's id found on OneSignal.com");
 
       if (deviceType == UserState.DEVICE_TYPE_ANDROID) {
          Integer pushErrorType = checkForGooglePushLibrary();
@@ -109,15 +141,15 @@ class OSUtils {
       boolean hasGCMLibrary = hasGCMLibrary();
 
       if (!hasFCMLibrary && !hasGCMLibrary) {
-         OneSignal.Log(OneSignal.LOG_LEVEL.FATAL, "The Firebase FCM library is missing! Please make sure to include it in your project.");
+         Log(OneSignal.LOG_LEVEL.FATAL, "The Firebase FCM library is missing! Please make sure to include it in your project.");
          return UserState.PUSH_STATUS_MISSING_FIREBASE_FCM_LIBRARY;
       }
 
       if (hasGCMLibrary && !hasFCMLibrary)
-         OneSignal.Log(OneSignal.LOG_LEVEL.WARN, "GCM Library detected, please upgrade to Firebase FCM library as GCM is deprecated!");
+         Log(OneSignal.LOG_LEVEL.WARN, "GCM Library detected, please upgrade to Firebase FCM library as GCM is deprecated!");
 
       if (hasGCMLibrary && hasFCMLibrary)
-         OneSignal.Log(OneSignal.LOG_LEVEL.WARN, "Both GCM & FCM Libraries detected! Please remove the deprecated GCM library.");
+         Log(OneSignal.LOG_LEVEL.WARN, "Both GCM & FCM Libraries detected! Please remove the deprecated GCM library.");
 
       return null;
    }
@@ -154,12 +186,12 @@ class OSUtils {
       boolean hasNotificationManagerCompat = hasNotificationManagerCompat();
 
       if (!hasWakefulBroadcastReceiver && !hasNotificationManagerCompat) {
-         OneSignal.Log(OneSignal.LOG_LEVEL.FATAL, "Could not find the Android Support Library. Please make sure it has been correctly added to your project.");
+         Log(OneSignal.LOG_LEVEL.FATAL, "Could not find the Android Support Library. Please make sure it has been correctly added to your project.");
          return UserState.PUSH_STATUS_MISSING_ANDROID_SUPPORT_LIBRARY;
       }
 
       if (!hasWakefulBroadcastReceiver || !hasNotificationManagerCompat) {
-         OneSignal.Log(OneSignal.LOG_LEVEL.FATAL, "The included Android Support Library is to old or incomplete. Please update to the 26.0.0 revision or newer.");
+         Log(OneSignal.LOG_LEVEL.FATAL, "The included Android Support Library is to old or incomplete. Please update to the 26.0.0 revision or newer.");
          return UserState.PUSH_STATUS_OUTDATED_ANDROID_SUPPORT_LIBRARY;
       }
 
@@ -169,7 +201,7 @@ class OSUtils {
          && getTargetSdkVersion(context) >= Build.VERSION_CODES.O) {
          // Class was added in 26.0.0-beta2
          if (!hasJobIntentService()) {
-            OneSignal.Log(OneSignal.LOG_LEVEL.FATAL, "The included Android Support Library is to old or incomplete. Please update to the 26.0.0 revision or newer.");
+            Log(OneSignal.LOG_LEVEL.FATAL, "The included Android Support Library is to old or incomplete. Please update to the 26.0.0 revision or newer.");
             return UserState.PUSH_STATUS_OUTDATED_ANDROID_SUPPORT_LIBRARY;
          }
       }
@@ -221,7 +253,7 @@ class OSUtils {
          Bundle bundle = ai.metaData;
          return bundle.getString(metaName);
       } catch (Throwable t) {
-         OneSignal.Log(OneSignal.LOG_LEVEL.ERROR, "", t);
+         Log(OneSignal.LOG_LEVEL.ERROR, "", t);
       }
 
       return null;
@@ -261,7 +293,7 @@ class OSUtils {
       Pattern pattern = Pattern.compile(emRegex);
       return pattern.matcher(email).matches();
    }
-   
+
    // Get the app's permission which will be false if the user disabled notifications for the app
    //   from Settings > Apps or by long pressing the notifications and selecting block.
    //   - Detection works on Android 4.4+, requires Android Support v4 Library 24.0.0+
@@ -269,10 +301,10 @@ class OSUtils {
       try {
          return NotificationManagerCompat.from(OneSignal.appContext).areNotificationsEnabled();
       } catch (Throwable t) {}
-      
+
       return true;
    }
-   
+
    static void runOnMainUIThread(Runnable runnable) {
       if (Looper.getMainLooper().getThread() == Thread.currentThread())
          runnable.run();
@@ -281,7 +313,12 @@ class OSUtils {
          handler.post(runnable);
       }
    }
-   
+
+   static void runOnMainThreadDelayed(Runnable runnable, int delay) {
+      Handler handler = new Handler(Looper.getMainLooper());
+      handler.postDelayed(runnable, delay);
+   }
+
    static int getTargetSdkVersion(Context context) {
       String packageName = context.getPackageName();
       PackageManager packageManager = context.getPackageManager();
@@ -291,32 +328,32 @@ class OSUtils {
       } catch (PackageManager.NameNotFoundException e) {
          e.printStackTrace();
       }
-      
+
       return Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1;
    }
-   
+
    static boolean isValidResourceName(String name) {
       return (name != null && !name.matches("^[0-9]"));
    }
-   
+
    static Uri getSoundUri(Context context, String sound) {
       Resources resources = context.getResources();
       String packageName = context.getPackageName();
       int soundId;
-      
+
       if (isValidResourceName(sound)) {
          soundId = resources.getIdentifier(sound, "raw", packageName);
          if (soundId != 0)
             return Uri.parse(ContentResolver.SCHEME_ANDROID_RESOURCE + "://" + packageName + "/" + soundId);
       }
-      
+
       soundId = resources.getIdentifier("onesignal_default_sound", "raw", packageName);
       if (soundId != 0)
          return Uri.parse(ContentResolver.SCHEME_ANDROID_RESOURCE + "://" + packageName + "/" + soundId);
-      
+
       return null;
    }
-   
+
    static long[] parseVibrationPattern(JSONObject gcmBundle) {
       try {
          Object patternObj = gcmBundle.opt("vib_pt");
@@ -325,14 +362,14 @@ class OSUtils {
             jsonVibArray = new JSONArray((String)patternObj);
          else
             jsonVibArray = (JSONArray)patternObj;
-         
+
          long[] longArray = new long[jsonVibArray.length()];
          for (int i = 0; i < jsonVibArray.length(); i++)
             longArray[i] = jsonVibArray.optLong(i);
-         
+
          return longArray;
       } catch (JSONException e) {}
-      
+
       return null;
    }
 
@@ -358,4 +395,76 @@ class OSUtils {
          e.printStackTrace();
       }
    }
+
+   static void openURLInBrowser(@NonNull String url) {
+      openURLInBrowser(Uri.parse(url.trim()));
+   }
+
+   private static void openURLInBrowser(@NonNull Uri uri) {
+      SchemaType type = uri.getScheme() != null ? SchemaType.fromString(uri.getScheme()) : null;
+      if (type == null) {
+          type = SchemaType.HTTP;
+          if (!uri.toString().contains("://")) {
+            uri = Uri.parse("http://" + uri.toString());
+         }
+      }
+      Intent intent;
+      switch (type) {
+         case DATA:
+            intent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER);
+            intent.setData(uri);
+            break;
+         case HTTPS:
+         case HTTP:
+         default:
+            intent = new Intent(Intent.ACTION_VIEW, uri);
+            break;
+      }
+      intent.addFlags(
+              Intent.FLAG_ACTIVITY_NO_HISTORY |
+                      Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET |
+                      Intent.FLAG_ACTIVITY_MULTIPLE_TASK |
+                      Intent.FLAG_ACTIVITY_NEW_TASK);
+      OneSignal.appContext.startActivity(intent);
+   }
+
+   // Creates a new Set<T> that supports reads and writes from more than one thread at a time
+   static <T> Set<T> newConcurrentSet() {
+      return Collections.newSetFromMap(new ConcurrentHashMap<T, Boolean>());
+   }
+
+   static boolean hasConfigChangeFlag(Activity activity, int configChangeFlag) {
+      boolean hasFlag = false;
+      try {
+         int configChanges = activity.getPackageManager().getActivityInfo(activity.getComponentName(), 0).configChanges;
+         int flagInt = configChanges & configChangeFlag;
+         hasFlag = flagInt != 0;
+      } catch (PackageManager.NameNotFoundException e) {
+         e.printStackTrace();
+      }
+      return hasFlag;
+   }
+
+   static @NonNull Collection<String> extractStringsFromCollection(@Nullable Collection<Object> collection) {
+      Collection<String> result = new ArrayList<>();
+      if (collection == null)
+         return result;
+
+      for (Object value : collection) {
+         if (value instanceof String)
+            result.add((String) value);
+      }
+      return result;
+   }
+
+   static boolean shouldLogMissingAppIdError(@Nullable String appId) {
+      if (appId != null)
+         return false;
+
+      // Wrapper SDKs can't normally call on Application.onCreate so just count this as informational.
+      Log(OneSignal.LOG_LEVEL.INFO, "OneSignal was not initialized, " +
+         "ensure to always initialize OneSignal from the onCreate of your Application class.");
+      return true;
+   }
+
 }

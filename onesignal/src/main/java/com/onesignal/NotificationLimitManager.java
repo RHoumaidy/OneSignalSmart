@@ -9,6 +9,7 @@ import android.os.Build;
 import android.service.notification.StatusBarNotification;
 import android.support.annotation.RequiresApi;
 
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -45,7 +46,7 @@ class NotificationLimitManager {
          else
             clearOldestOverLimitFallback(context, notifsToMakeRoomFor);
       } catch(Throwable t) {
-         // try-catch for Android 6.0.X bug work around, getActiveNotifications bug
+         // try-catch for Android 6.0.X and possibly 8.0.0 bug work around, getActiveNotifications bug
          clearOldestOverLimitFallback(context, notifsToMakeRoomFor);
       }
    }
@@ -54,8 +55,7 @@ class NotificationLimitManager {
    // This could be any notification, not just a OneSignal notification
    @RequiresApi(api = Build.VERSION_CODES.M)
    static void clearOldestOverLimitStandard(Context context, int notifsToMakeRoomFor) throws Throwable {
-      NotificationManager notifManager = (NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
-      StatusBarNotification[] activeNotifs = notifManager.getActiveNotifications();
+      StatusBarNotification[] activeNotifs = OneSignalNotificationManager.getActiveNotifications(context);
 
       int notifsToClear = (activeNotifs.length - getMaxNumberOfNotificationsInt()) + notifsToMakeRoomFor;
       // We have enough room in the notification shade, no need to clear any notifications

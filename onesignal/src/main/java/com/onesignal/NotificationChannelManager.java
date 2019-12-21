@@ -47,6 +47,8 @@ import java.math.BigInteger;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 class NotificationChannelManager {
    
@@ -56,6 +58,7 @@ class NotificationChannelManager {
 
    private static final String DEFAULT_CHANNEL_ID = "fcm_fallback_notification_channel";
    private static final String RESTORE_CHANNEL_ID = "restored_OS_notifications";
+   private static final Pattern hexPattern = Pattern.compile("^([A-Fa-f0-9]{8})$");
    
    static String createNotificationChannel(NotificationGenerationJob notifJob) {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O)
@@ -64,8 +67,7 @@ class NotificationChannelManager {
       Context context = notifJob.context;
       JSONObject jsonPayload = notifJob.jsonPayload;
 
-      NotificationManager notificationManager =
-            (NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
+      NotificationManager notificationManager = OneSignalNotificationManager.getNotificationManager(context);
 
       if (notifJob.restoring)
          return createRestoreChannel(notificationManager);
@@ -130,8 +132,21 @@ class NotificationChannelManager {
       }
 
       if (payload.has("ledc")) {
-         BigInteger ledColor = new BigInteger(payload.optString("ledc"), 16);
-         channel.setLightColor(ledColor.intValue());
+         String ledc = payload.optString("ledc");
+         Matcher matcher = hexPattern.matcher(ledc);
+         BigInteger ledColor;
+
+         if (!matcher.matches()) {
+            OneSignal.Log(OneSignal.LOG_LEVEL.WARN, "OneSignal LED Color Settings: ARGB Hex value incorrect format (E.g: FF9900FF)");
+            ledc = "FFFFFFFF";
+         }
+
+         try {
+            ledColor = new BigInteger(ledc, 16);
+            channel.setLightColor(ledColor.intValue());
+         } catch (Throwable t) {
+            OneSignal.Log(OneSignal.LOG_LEVEL.ERROR, "Couldn't convert ARGB Hex value to BigInteger:", t);
+         }
       }
       channel.enableLights(payload.optInt("led", 1) == 1);
 
@@ -194,8 +209,7 @@ class NotificationChannelManager {
       if (list == null)
          return;
 
-      NotificationManager notificationManager =
-         (NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
+      NotificationManager notificationManager = OneSignalNotificationManager.getNotificationManager(context);
       
       Set<String> syncedChannelSet = new HashSet<>();
       int jsonArraySize = list.length();

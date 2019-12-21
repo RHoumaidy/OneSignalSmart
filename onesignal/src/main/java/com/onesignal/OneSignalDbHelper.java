@@ -35,39 +35,62 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.os.SystemClock;
 
 import com.onesignal.OneSignalDbContract.NotificationTable;
+import com.onesignal.OneSignalDbContract.OutcomeEventsTable;
+import com.onesignal.OneSignalDbContract.CachedUniqueOutcomeNotificationTable;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class OneSignalDbHelper extends SQLiteOpenHelper {
-   static final int DATABASE_VERSION = 3;
+   static final int DATABASE_VERSION = 6;
    private static final String DATABASE_NAME = "OneSignal.db";
 
+   private static final String INTEGER_PRIMARY_KEY_TYPE = " INTEGER PRIMARY KEY";
    private static final String TEXT_TYPE = " TEXT";
    private static final String INT_TYPE = " INTEGER";
+   private static final String FLOAT_TYPE = " FLOAT";
+   private static final String TIMESTAMP_TYPE = " TIMESTAMP";
    private static final String COMMA_SEP = ",";
-   
+
    private static final int DB_OPEN_RETRY_MAX = 5;
    private static final int DB_OPEN_RETRY_BACKOFF = 400;
 
-   private static final String SQL_CREATE_ENTRIES =
-       "CREATE TABLE " + NotificationTable.TABLE_NAME + " (" +
-           NotificationTable._ID + " INTEGER PRIMARY KEY," +
-           NotificationTable.COLUMN_NAME_NOTIFICATION_ID + TEXT_TYPE + COMMA_SEP +
-           NotificationTable.COLUMN_NAME_ANDROID_NOTIFICATION_ID + INT_TYPE + COMMA_SEP +
-           NotificationTable.COLUMN_NAME_GROUP_ID + TEXT_TYPE + COMMA_SEP +
-           NotificationTable.COLUMN_NAME_COLLAPSE_ID + TEXT_TYPE + COMMA_SEP +
-           NotificationTable.COLUMN_NAME_IS_SUMMARY + INT_TYPE + " DEFAULT 0" + COMMA_SEP +
-           NotificationTable.COLUMN_NAME_OPENED + INT_TYPE + " DEFAULT 0" + COMMA_SEP +
-           NotificationTable.COLUMN_NAME_DISMISSED + INT_TYPE + " DEFAULT 0" + COMMA_SEP +
-           NotificationTable.COLUMN_NAME_TITLE + TEXT_TYPE + COMMA_SEP +
-           NotificationTable.COLUMN_NAME_MESSAGE + TEXT_TYPE + COMMA_SEP +
-           NotificationTable.COLUMN_NAME_FULL_DATA + TEXT_TYPE + COMMA_SEP +
-           NotificationTable.COLUMN_NAME_CREATED_TIME + " TIMESTAMP DEFAULT (strftime('%s', 'now'))" + COMMA_SEP +
-           NotificationTable.COLUMN_NAME_EXPIRE_TIME + " TIMESTAMP" +
-       ");";
+   protected static final String SQL_CREATE_ENTRIES =
+           "CREATE TABLE " + NotificationTable.TABLE_NAME + " (" +
+                   NotificationTable._ID + INTEGER_PRIMARY_KEY_TYPE + COMMA_SEP +
+                   NotificationTable.COLUMN_NAME_NOTIFICATION_ID + TEXT_TYPE + COMMA_SEP +
+                   NotificationTable.COLUMN_NAME_ANDROID_NOTIFICATION_ID + INT_TYPE + COMMA_SEP +
+                   NotificationTable.COLUMN_NAME_GROUP_ID + TEXT_TYPE + COMMA_SEP +
+                   NotificationTable.COLUMN_NAME_COLLAPSE_ID + TEXT_TYPE + COMMA_SEP +
+                   NotificationTable.COLUMN_NAME_IS_SUMMARY + INT_TYPE + " DEFAULT 0" + COMMA_SEP +
+                   NotificationTable.COLUMN_NAME_OPENED + INT_TYPE + " DEFAULT 0" + COMMA_SEP +
+                   NotificationTable.COLUMN_NAME_DISMISSED + INT_TYPE + " DEFAULT 0" + COMMA_SEP +
+                   NotificationTable.COLUMN_NAME_TITLE + TEXT_TYPE + COMMA_SEP +
+                   NotificationTable.COLUMN_NAME_MESSAGE + TEXT_TYPE + COMMA_SEP +
+                   NotificationTable.COLUMN_NAME_FULL_DATA + TEXT_TYPE + COMMA_SEP +
+                   NotificationTable.COLUMN_NAME_CREATED_TIME + TIMESTAMP_TYPE + " DEFAULT (strftime('%s', 'now'))" + COMMA_SEP +
+                   NotificationTable.COLUMN_NAME_EXPIRE_TIME + TIMESTAMP_TYPE +
+                   ");";
 
-   private static final String[] SQL_INDEX_ENTRIES = {
+   private static final String SQL_CREATE_OUTCOME_ENTRIES =
+           "CREATE TABLE " + OutcomeEventsTable.TABLE_NAME + " (" +
+                   OutcomeEventsTable._ID + INTEGER_PRIMARY_KEY_TYPE + COMMA_SEP +
+                   OutcomeEventsTable.COLUMN_NAME_SESSION + TEXT_TYPE + COMMA_SEP +
+                   OutcomeEventsTable.COLUMN_NAME_NOTIFICATION_IDS + TEXT_TYPE + COMMA_SEP +
+                   OutcomeEventsTable.COLUMN_NAME_NAME + TEXT_TYPE + COMMA_SEP +
+                   OutcomeEventsTable.COLUMN_NAME_TIMESTAMP + TIMESTAMP_TYPE + COMMA_SEP +
+                   // "params TEXT" Added in v4, removed in v5.
+                   OutcomeEventsTable.COLUMN_NAME_WEIGHT + FLOAT_TYPE + // New in v5, missing migration added in v6
+                   ");";
+
+   private static final String SQL_CREATE_UNIQUE_OUTCOME_NOTIFICATION_ENTRIES =
+           "CREATE TABLE " + CachedUniqueOutcomeNotificationTable.TABLE_NAME + " (" +
+                   CachedUniqueOutcomeNotificationTable._ID + INTEGER_PRIMARY_KEY_TYPE + COMMA_SEP +
+                   CachedUniqueOutcomeNotificationTable.COLUMN_NAME_NOTIFICATION_ID + TEXT_TYPE + COMMA_SEP +
+                   CachedUniqueOutcomeNotificationTable.COLUMN_NAME_NAME + TEXT_TYPE +
+                   ");";
+
+   protected static final String[] SQL_INDEX_ENTRIES = {
       NotificationTable.INDEX_CREATE_NOTIFICATION_ID,
       NotificationTable.INDEX_CREATE_ANDROID_NOTIFICATION_ID,
       NotificationTable.INDEX_CREATE_GROUP_ID,
@@ -107,7 +130,7 @@ public class OneSignalDbHelper extends SQLiteOpenHelper {
          }
       }
    }
-   
+
    synchronized SQLiteDatabase getReadableDbWithRetries() {
       int count = 0;
       while(true) {
@@ -124,6 +147,8 @@ public class OneSignalDbHelper extends SQLiteOpenHelper {
    @Override
    public void onCreate(SQLiteDatabase db) {
       db.execSQL(SQL_CREATE_ENTRIES);
+      db.execSQL(SQL_CREATE_OUTCOME_ENTRIES);
+      db.execSQL(SQL_CREATE_UNIQUE_OUTCOME_NOTIFICATION_ENTRIES);
       for (String ind : SQL_INDEX_ENTRIES) {
          db.execSQL(ind);
       }
@@ -139,17 +164,27 @@ public class OneSignalDbHelper extends SQLiteOpenHelper {
          OneSignal.Log(OneSignal.LOG_LEVEL.ERROR, "Error in upgrade, migration may have already run! Skipping!" , e);
       }
    }
-   
+
    private static void internalOnUpgrade(SQLiteDatabase db, int oldVersion) {
       if (oldVersion < 2)
-         upgradeFromV1ToV2(db);
+         upgradeToV2(db);
 
       if (oldVersion < 3)
-         upgradeFromV2ToV3(db);
+         upgradeToV3(db);
+
+      if (oldVersion < 4)
+          upgradeToV4(db);
+
+      if (oldVersion < 5)
+         upgradeToV5(db);
+
+      // Specifically running only when going from 5 to 6+ is intentional
+      if (oldVersion == 5)
+         upgradeFromV5ToV6(db);
    }
 
    // Add collapse_id field and index
-   private static void upgradeFromV1ToV2(SQLiteDatabase db) {
+   private static void upgradeToV2(SQLiteDatabase db) {
       safeExecSQL(db,
          "ALTER TABLE " + NotificationTable.TABLE_NAME + " " +
             "ADD COLUMN " + NotificationTable.COLUMN_NAME_COLLAPSE_ID + TEXT_TYPE + ";"
@@ -159,7 +194,7 @@ public class OneSignalDbHelper extends SQLiteOpenHelper {
 
    // Add expire_time field and index.
    // Also backfills expire_time to create_time + 72 hours
-   private static void upgradeFromV2ToV3(SQLiteDatabase db) {
+   private static void upgradeToV3(SQLiteDatabase db) {
       safeExecSQL(db,
          "ALTER TABLE " + NotificationTable.TABLE_NAME + " " +
             "ADD COLUMN " + NotificationTable.COLUMN_NAME_EXPIRE_TIME + " TIMESTAMP" + ";"
@@ -174,6 +209,50 @@ public class OneSignalDbHelper extends SQLiteOpenHelper {
       safeExecSQL(db, NotificationTable.INDEX_CREATE_EXPIRE_TIME);
    }
 
+   private static void upgradeToV4(SQLiteDatabase db) {
+      safeExecSQL(db, SQL_CREATE_OUTCOME_ENTRIES);
+   }
+
+   private static void upgradeToV5(SQLiteDatabase db) {
+      // Added for 3.12.1
+      safeExecSQL(db, SQL_CREATE_UNIQUE_OUTCOME_NOTIFICATION_ENTRIES);
+      // Added for 3.12.2
+      upgradeOutcomeTableRevision1To2(db);
+   }
+
+   // We only want to run this if going from DB v5 to v6 specifically since
+   //   it was originally missed in upgradeToV5 in 3.12.1
+   // Added for 3.12.2
+   private static void upgradeFromV5ToV6(SQLiteDatabase db) {
+      upgradeOutcomeTableRevision1To2(db);
+   }
+
+   // On the outcome table this adds the new weight column and drops params column.
+   private static void upgradeOutcomeTableRevision1To2(SQLiteDatabase db) {
+      String commonColumns = "_id,name,session,timestamp,notification_ids";
+      try {
+         // Since SQLite does not support dropping a column we need to:
+         //   1. Create a temptable
+         //   2. Copy outcome table into it
+         //   3. Drop the outcome table
+         //   4. Recreate it with the correct fields
+         //   5. Copy the temptable rows back into the new outcome table
+         //   6. Drop the temptable.
+         db.execSQL("BEGIN TRANSACTION;");
+         db.execSQL("CREATE TEMPORARY TABLE outcome_backup(" + commonColumns + ");");
+         db.execSQL("INSERT INTO outcome_backup SELECT " + commonColumns + " FROM outcome;");
+         db.execSQL("DROP TABLE outcome;");
+         db.execSQL(SQL_CREATE_OUTCOME_ENTRIES);
+         // Not converting weight from param here, just set to zero.
+         //   3.12.1 quickly replaced 3.12.0 so converting cache isn't critical.
+         db.execSQL("INSERT INTO outcome (" + commonColumns + ", weight) SELECT " + commonColumns + ", 0 FROM outcome_backup;");
+         db.execSQL("DROP TABLE outcome_backup;");
+         db.execSQL("COMMIT;");
+      } catch (SQLiteException e) {
+         e.printStackTrace();
+      }
+   }
+
    private static void safeExecSQL(SQLiteDatabase db, String sql) {
       try {
          db.execSQL(sql);
@@ -181,18 +260,18 @@ public class OneSignalDbHelper extends SQLiteOpenHelper {
          e.printStackTrace();
       }
    }
-   
+
    @Override
    public void onDowngrade(SQLiteDatabase db, int oldVersion, int newVersion) {
       OneSignal.Log(OneSignal.LOG_LEVEL.WARN, "SDK version rolled back! Clearing " + DATABASE_NAME + " as it could be in an unexpected state.");
-      
+
       Cursor cursor = db.rawQuery("SELECT name FROM sqlite_master WHERE type='table'", null);
       try {
          List<String> tables = new ArrayList<>(cursor.getCount());
-      
+
          while (cursor.moveToNext())
             tables.add(cursor.getString(0));
-      
+
          for (String table : tables) {
             if (table.startsWith("sqlite_"))
                continue;
@@ -201,10 +280,10 @@ public class OneSignalDbHelper extends SQLiteOpenHelper {
       } finally {
          cursor.close();
       }
-      
+
       onCreate(db);
    }
-   
+
    // Could enable WAL in the future but requires Android API 11
    /*
    @Override
@@ -230,5 +309,9 @@ public class OneSignalDbHelper extends SQLiteOpenHelper {
          where.append(" AND " + NotificationTable.COLUMN_NAME_EXPIRE_TIME + " > " + currentTimeSec);
 
       return where;
+   }
+
+   public void cleanOutcomeDatabase() {
+      this.getWritableDatabase().delete(OneSignalDbContract.OutcomeEventsTable.TABLE_NAME, null, null);
    }
 }

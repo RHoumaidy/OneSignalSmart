@@ -16,6 +16,7 @@ import com.onesignal.shortcutbadger.ShortcutBadgeException;
 
 /**
  * Created by wuxuejian on 2016/10/9.
+ * 需在设置 -- 通知和状态栏 -- 应用角标管理 中开启应用
  */
 
 public class ZukHomeBadger implements Badger {
