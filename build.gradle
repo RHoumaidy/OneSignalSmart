@@ -33,27 +33,3 @@ allprojects {
         maven { url 'https://maven.google.com' }
     }
 }
-
-ext {
-    bintrayRepo = 'onesignal'
-    bintrayName = 'SmartSignal'
-
-    publishedGroupId = 'com.smartgateapps'
-    libraryName = 'SmartSignal'
-    artifact = 'smartsignal'
-
-    libraryDescription = 'This view is a container that supports diagonal scroll and fling gesture. It is based on AOSP HorizontalScrollView.'
-
-    siteUrl = 'https://github.com/LissF/DiagonalScrollView'
-    gitUrl = 'https://github.com/LissF/DiagonalScrollView.git'
-
-    libraryVersion = '0.3.3'
-
-    developerId = 'lissf'
-    developerName = 'Yegor Zatsepin'
-    developerEmail = 'Liss_F@ukr.net'
-
-    licenseName = 'The Apache Software License, Version 2.0'
-    licenseUrl = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-    allLicenses = ["Apache-2.0"]
-}
