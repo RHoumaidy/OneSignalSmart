@@ -28,8 +28,11 @@
 package com.onesignal;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -44,10 +47,11 @@ public class PermissionsActivity extends Activity {
    // Default animation duration in milliseconds
    private static final int DELAY_TIME_CALLBACK_CALL = 500;
    private static final int REQUEST_LOCATION = 2;
+   private static final int REQUEST_SETTINGS = 3;
 
-   static boolean waiting, answered;
+   static boolean waiting, answered, fallbackToSettings, neverAskAgainClicked;
    private static ActivityLifecycleHandler.ActivityAvailableListener activityAvailableListener;
-   
+
    @Override
    protected void onCreate(Bundle savedInstanceState) {
       super.onCreate(savedInstanceState);
@@ -83,7 +87,8 @@ public class PermissionsActivity extends Activity {
 
       if (!waiting) {
          waiting = true;
-         ActivityCompat.requestPermissions(this, new String[]{LocationGMS.requestPermission}, REQUEST_LOCATION);
+         neverAskAgainClicked = !ActivityCompat.shouldShowRequestPermissionRationale(PermissionsActivity.this, LocationController.requestPermission);
+         ActivityCompat.requestPermissions(this, new String[]{LocationController.requestPermission}, REQUEST_LOCATION);
       }
    }
 
@@ -103,11 +108,14 @@ public class PermissionsActivity extends Activity {
             @Override
             public void run() {
                boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-               LocationGMS.sendAndClearPromptHandlers(true, granted);
-               if (granted)
-                  LocationGMS.startGetLocation();
-               else
-                  LocationGMS.fireFailedComplete();
+               OneSignal.PromptActionResult result = granted ? OneSignal.PromptActionResult.PERMISSION_GRANTED : OneSignal.PromptActionResult.PERMISSION_DENIED;
+                LocationController.sendAndClearPromptHandlers(true, result);
+               if (granted) {
+                   LocationController.startGetLocation();
+               } else {
+                  attemptToShowLocationPermissionSettings();
+                   LocationController.fireFailedComplete();
+               }
             }
          }, DELAY_TIME_CALLBACK_CALL);
       }
@@ -116,11 +124,39 @@ public class PermissionsActivity extends Activity {
       overridePendingTransition(R.anim.onesignal_fade_in, R.anim.onesignal_fade_out);
    }
 
+   private void attemptToShowLocationPermissionSettings() {
+      if (fallbackToSettings
+              && neverAskAgainClicked
+              && !ActivityCompat.shouldShowRequestPermissionRationale(PermissionsActivity.this, LocationController.requestPermission))
+         showLocationPermissionSettings();
+   }
 
-   static void startPrompt() {
+   private void showLocationPermissionSettings() {
+      new AlertDialog.Builder(ActivityLifecycleHandler.curActivity)
+              .setTitle(R.string.location_not_available_title)
+              .setMessage(R.string.location_not_available_open_settings_message)
+              .setPositiveButton(R.string.location_not_available_open_settings_option, new DialogInterface.OnClickListener() {
+                 public void onClick(DialogInterface dialog, int which) {
+                    Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                    intent.setData(Uri.parse("package:" + getPackageName()));
+                    startActivity(intent);
+                     LocationController.sendAndClearPromptHandlers(true, OneSignal.PromptActionResult.PERMISSION_DENIED);
+                 }
+              })
+              .setNegativeButton(android.R.string.no, new DialogInterface.OnClickListener() {
+                 @Override
+                 public void onClick(DialogInterface dialog, int which) {
+                     LocationController.sendAndClearPromptHandlers(true, OneSignal.PromptActionResult.PERMISSION_DENIED);
+                 }
+              })
+              .show();
+   }
+
+   static void startPrompt(boolean fallbackCondition) {
       if (PermissionsActivity.waiting || PermissionsActivity.answered)
          return;
 
+      fallbackToSettings = fallbackCondition;
       activityAvailableListener = new ActivityLifecycleHandler.ActivityAvailableListener() {
          @Override
          public void available(@NonNull Activity activity) {

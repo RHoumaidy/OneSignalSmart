@@ -63,6 +63,7 @@ class OneSignalSyncServiceUtils {
    private static final long SYNC_AFTER_BG_DELAY_MS = OneSignal.MIN_ON_SESSION_TIME_MILLIS;
 
    private static Long nextScheduledSyncTimeMs = 0L;
+   private static boolean needsJobReschedule = false;
 
    static void scheduleLocationUpdateTask(Context context, long delayMs) {
       OneSignal.Log(OneSignal.LOG_LEVEL.VERBOSE, "scheduleLocationUpdateTask:delayMs: " + delayMs);
@@ -76,7 +77,7 @@ class OneSignalSyncServiceUtils {
 
    static synchronized void cancelSyncTask(Context context) {
       nextScheduledSyncTimeMs = 0L;
-      boolean didSchedule = LocationGMS.scheduleUpdate(context);
+      boolean didSchedule = LocationController.scheduleUpdate(context);
       if (didSchedule)
          return;
 
@@ -124,6 +125,7 @@ class OneSignalSyncServiceUtils {
          scheduleSyncServiceAsJob(context, delayMs);
       else
          scheduleSyncServiceAsAlarm(context, delayMs);
+
       nextScheduledSyncTimeMs = System.currentTimeMillis() + delayMs;
    }
 
@@ -134,9 +136,29 @@ class OneSignalSyncServiceUtils {
              ) == PackageManager.PERMISSION_GRANTED;
    }
 
+
+   @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+   private static boolean isJobIdRunning(Context context) {
+      final JobScheduler jobScheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+      for (JobInfo jobInfo : jobScheduler.getAllPendingJobs()) {
+         if (jobInfo.getId() == OneSignalSyncServiceUtils.SYNC_TASK_ID && syncBgThread != null && syncBgThread.isAlive()) {
+            return true;
+         }
+      }
+      return false;
+   }
+
    @RequiresApi(21)
    private static void scheduleSyncServiceAsJob(Context context, long delayMs) {
       OneSignal.Log(OneSignal.LOG_LEVEL.VERBOSE, "scheduleSyncServiceAsJob:atTime: " + delayMs);
+
+      if (isJobIdRunning(context)) {
+         OneSignal.Log(OneSignal.LOG_LEVEL.VERBOSE, "scheduleSyncServiceAsJob Scheduler already running!");
+         // If a JobScheduler is schedule again while running it will stop current job. We will schedule again when finished.
+         // This will avoid InterruptionException due to thread.join() or queue.take() running.
+         needsJobReschedule = true;
+         return;
+      }
 
       JobInfo.Builder jobBuilder = new JobInfo.Builder(
          SYNC_TASK_ID,
@@ -150,7 +172,7 @@ class OneSignalSyncServiceUtils {
       if (hasBootPermission(context))
          jobBuilder.setPersisted(true);
 
-      JobScheduler jobScheduler = (JobScheduler)context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+      JobScheduler jobScheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
       try {
          int result = jobScheduler.schedule(jobBuilder.build());
          OneSignal.Log(OneSignal.LOG_LEVEL.INFO, "scheduleSyncServiceAsJob:result: " + result);
@@ -218,24 +240,24 @@ class OneSignalSyncServiceUtils {
          // https://github.com/OneSignal/OneSignal-Android-SDK/issues/650
          try {
             final BlockingQueue<Object> queue = new ArrayBlockingQueue<>(1);
-            LocationGMS.LocationHandler locationHandler = new LocationGMS.LocationHandler() {
+            LocationController.LocationHandler locationHandler = new LocationController.LocationHandler() {
                @Override
-               public LocationGMS.PermissionType getType() {
-                  return LocationGMS.PermissionType.SYNC_SERVICE;
+               public LocationController.PermissionType getType() {
+                  return LocationController.PermissionType.SYNC_SERVICE;
                }
 
                @Override
-               public void complete(LocationGMS.LocationPoint point) {
+               public void onComplete(LocationController.LocationPoint point) {
                   Object object = point != null ?  point : new Object();
                   queue.offer(object);
                }
             };
-            LocationGMS.getLocation(OneSignal.appContext, false, locationHandler);
+            LocationController.getLocation(OneSignal.appContext, false, false, locationHandler);
 
             // The take() will return the offered point once the callback for the locationHandler is completed
             Object point = queue.take();
-            if (point instanceof LocationGMS.LocationPoint)
-               OneSignalStateSynchronizer.updateLocation((LocationGMS.LocationPoint) point);
+            if (point instanceof LocationController.LocationPoint)
+               OneSignalStateSynchronizer.updateLocation((LocationController.LocationPoint) point);
 
          } catch (InterruptedException e) {
             e.printStackTrace();
@@ -268,8 +290,11 @@ class OneSignalSyncServiceUtils {
 
       @Override
       protected void stopSync() {
-         OneSignal.Log(OneSignal.LOG_LEVEL.DEBUG, "LollipopSyncRunnable:JobFinished");
-         jobService.jobFinished(jobParameters, false);
+         OneSignal.Log(OneSignal.LOG_LEVEL.DEBUG, "LollipopSyncRunnable:JobFinished needsJobReschedule: " + needsJobReschedule);
+         // Reschedule if needed
+         boolean reschedule = needsJobReschedule;
+         needsJobReschedule = false;
+         jobService.jobFinished(jobParameters, reschedule);
       }
    }
 

@@ -24,7 +24,7 @@ class Global {
     static def POM_NAME = 'OneSignalSmart'
     static def POM_ARTIFACT_ID = 'OneSignalSmart'
     static def POM_PACKAGING = 'aar'
-    static def VERSION_NAME = '3.13.1'
+    static def VERSION_NAME = '3.15.1'
 
     static def GROUP_ID = 'com.smartgate'
     static def POM_DESCRIPTION = 'OneSignal Smart Android SDK'

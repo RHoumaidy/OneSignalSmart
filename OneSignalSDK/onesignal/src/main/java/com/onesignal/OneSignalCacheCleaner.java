@@ -1,42 +1,33 @@
 package com.onesignal;
 
-import com.onesignal.OneSignalDbContract.NotificationTable;
-import com.onesignal.OneSignalDbContract.CachedUniqueOutcomeNotificationTable;
-
 import android.content.Context;
+import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.os.Process;
+import android.support.annotation.WorkerThread;
+
+import com.onesignal.OneSignalDbContract.NotificationTable;
+import com.onesignal.influence.model.OSInfluenceChannel;
+import com.onesignal.outcomes.OSOutcomeTableProvider;
 
 class OneSignalCacheCleaner {
 
-    private static String OS_DELETE_OLD_CACHED_DATA = "OS_DELETE_OLD_CACHED_DATA";
+    private final static long NOTIFICATION_CACHE_DATA_LIFETIME = 604_800L; // 7 days in second
+
+    private final static String OS_DELETE_CACHED_NOTIFICATIONS_THREAD = "OS_DELETE_CACHED_NOTIFICATIONS_THREAD";
+    private final static String OS_DELETE_CACHED_REDISPLAYED_IAMS_THREAD = "OS_DELETE_CACHED_REDISPLAYED_IAMS_THREAD";
 
     /**
      * We clean outdated cache from several places within the OneSignal SDK here
-     * 1. In App Messaging id sets (impressions, clicks, views)
-     * 2. Notifications after 1 week
-     * 3. Unique outcome events linked to notification ids (1 week)
+     * 1. Notifications & unique outcome events linked to notification ids (1 week)
+     * 2. Cached In App Messaging Sets in SharedPreferences (impressions, clicks, views) and SQL IAMs
      */
-    synchronized static void cleanOldCachedData(final Context context) {
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                Thread.currentThread().setPriority(Process.THREAD_PRIORITY_BACKGROUND);
-                OneSignalDbHelper dbHelper = OneSignalDbHelper.getInstance(context);
-                SQLiteDatabase writableDb = dbHelper.getWritableDbWithRetries();
+    static void cleanOldCachedData(final Context context) {
+        OneSignalDbHelper dbHelper = OneSignalDbHelper.getInstance(context);
+        SQLiteDatabase writableDb = dbHelper.getSQLiteDatabaseWithRetries();
 
-                cleanInAppMessagingCache();
-                cleanNotificationCache(writableDb);
-            }
-        }, OS_DELETE_OLD_CACHED_DATA).start();
-    }
-
-    /**
-     * TODO: Needs to be implemented to clean out old IAM data used to track impressions, clicks, and viewed IAMs
-     */
-    static void cleanInAppMessagingCache() {
-        // NOTE: Currently IAMs will pile up overtime and since IAMs can be modified, active, inactive, etc.
-        //  we never truly know when it is the correct time to remove these ids form our cache
+        cleanNotificationCache(writableDb);
+        cleanCachedInAppMessages(dbHelper);
     }
 
     /**
@@ -44,29 +35,87 @@ class OneSignalCacheCleaner {
      * 1. NotificationTable.TABLE_NAME
      * 2. CachedUniqueOutcomeNotificationTable.TABLE_NAME
      */
-    static void cleanNotificationCache(SQLiteDatabase writableDb) {
-        cleanOldNotificationData(writableDb);
-        cleanOldUniqueOutcomeEventNotificationsCache(writableDb);
+    synchronized static void cleanNotificationCache(final SQLiteDatabase writableDb) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Thread.currentThread().setPriority(Process.THREAD_PRIORITY_BACKGROUND);
+
+                writableDb.beginTransaction();
+                try {
+                    cleanCachedNotifications(writableDb);
+                    cleanCachedUniqueOutcomeEventNotifications(writableDb);
+                    writableDb.setTransactionSuccessful();
+                } finally {
+                    try {
+                        writableDb.endTransaction(); // May throw if transaction was never opened or DB is full.
+                    } catch (SQLException t) {
+                        OneSignal.Log(OneSignal.LOG_LEVEL.ERROR, "Error closing transaction! ", t);
+                    }
+                }
+            }
+
+        }, OS_DELETE_CACHED_NOTIFICATIONS_THREAD).start();
     }
 
     /**
-     * Deletes any notifications with created timestamps older than 7 days
+     * Remove IAMs that the last display time was six month ago
+     * 1. Query for all old message ids and old clicked click ids
+     * 2. Delete old IAMs from SQL
+     * 3. Use queried data to clean SharedPreferences
      */
-    private static void cleanOldNotificationData(SQLiteDatabase writableDb) {
-        writableDb.delete(NotificationTable.TABLE_NAME,
-                NotificationTable.COLUMN_NAME_CREATED_TIME + " < " + ((System.currentTimeMillis() / 1_000L) - 604_800L),
-                null);
+    @WorkerThread
+    synchronized static void cleanCachedInAppMessages(final OneSignalDbHelper dbHelper) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Thread.currentThread().setPriority(Process.THREAD_PRIORITY_BACKGROUND);
+
+                OSInAppMessageRepository inAppMessageRepository = OSInAppMessageController
+                        .getController()
+                        .getInAppMessageRepository(dbHelper);
+                inAppMessageRepository.cleanCachedInAppMessages();
+            }
+        }, OS_DELETE_CACHED_REDISPLAYED_IAMS_THREAD).start();
     }
 
     /**
-     * Deletes any notifications whose ids do not exist inside of the NotificationTable.TABLE_NAME
+     * Deletes notifications with created timestamps older than 7 days
+     * <br/><br/>
+     * Note: This should only ever be called by {@link OneSignalCacheCleaner#cleanNotificationCache(SQLiteDatabase)}
+     * <br/><br/>
+     * @see OneSignalCacheCleaner#cleanNotificationCache(SQLiteDatabase)
      */
-    static void cleanOldUniqueOutcomeEventNotificationsCache(SQLiteDatabase writableDb) {
-        writableDb.delete(CachedUniqueOutcomeNotificationTable.TABLE_NAME,
-                "NOT EXISTS(SELECT NULL FROM " + NotificationTable.TABLE_NAME +
-                        " n WHERE" +
-                        " n." + NotificationTable.COLUMN_NAME_NOTIFICATION_ID  + " = " + CachedUniqueOutcomeNotificationTable.COLUMN_NAME_NOTIFICATION_ID + ")",
-                null);
+    private static void cleanCachedNotifications(SQLiteDatabase writableDb) {
+        String whereStr = NotificationTable.COLUMN_NAME_CREATED_TIME + " < ?";
+
+        String sevenDaysAgoInSeconds = String.valueOf((System.currentTimeMillis() / 1_000L) - NOTIFICATION_CACHE_DATA_LIFETIME);
+        String[] whereArgs = new String[]{ sevenDaysAgoInSeconds };
+
+        writableDb.delete(
+                NotificationTable.TABLE_NAME,
+                whereStr,
+                whereArgs);
     }
 
+    /**
+     * Deletes cached unique outcome notifications whose ids do not exist inside of the NotificationTable.TABLE_NAME
+     * <br/><br/>
+     * Note: This should only ever be called by {@link OneSignalCacheCleaner#cleanNotificationCache(SQLiteDatabase)}
+     * <br/><br/>
+     * @see OneSignalCacheCleaner#cleanNotificationCache(SQLiteDatabase)
+     */
+    private static void cleanCachedUniqueOutcomeEventNotifications(SQLiteDatabase writableDb) {
+        String whereStr = "NOT EXISTS(" +
+                "SELECT NULL FROM " + NotificationTable.TABLE_NAME + " n " +
+                "WHERE" + " n." + NotificationTable.COLUMN_NAME_NOTIFICATION_ID + " = " + OSOutcomeTableProvider.CACHE_UNIQUE_OUTCOME_COLUMN_CHANNEL_INFLUENCE_ID +
+                " AND " + OSOutcomeTableProvider.CACHE_UNIQUE_OUTCOME_COLUMN_CHANNEL_TYPE + " = \"" + OSInfluenceChannel.NOTIFICATION.toString().toLowerCase() +
+                "\")";
+
+        writableDb.delete(
+                OSOutcomeTableProvider.CACHE_UNIQUE_OUTCOME_TABLE,
+                whereStr,
+                null);
+    }
+  
 }

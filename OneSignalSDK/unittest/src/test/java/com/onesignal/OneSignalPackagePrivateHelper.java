@@ -9,6 +9,8 @@ import android.os.Looper;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 
+import com.onesignal.influence.OSTrackerFactory;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -16,7 +18,6 @@ import org.robolectric.util.Scheduler;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -30,7 +31,7 @@ public class OneSignalPackagePrivateHelper {
       abstract void run(T object) throws Exception;
    }
 
-   static private void processNetworkHandles(RunnableArg runnable) throws Exception {
+   private static void processNetworkHandles(RunnableArg runnable) throws Exception {
       Set<Map.Entry<Integer, UserStateSynchronizer.NetworkHandlerThread>> entrySet;
 
       entrySet = OneSignalStateSynchronizer.getPushStateSynchronizer().networkHandlerThreads.entrySet();
@@ -102,42 +103,24 @@ public class OneSignalPackagePrivateHelper {
       return true;
    }
 
-   public static OSSessionManager.Session OneSignal_getSessionType() {
-      return OneSignal.getSessionManager().getSession();
-   }
-
-   public static String OneSignal_getSessionDirectNotification() {
-      return OneSignal.getSessionManager().getDirectNotificationId();
-   }
-
-   public static JSONArray OneSignal_getSessionIndirectNotificationIds() {
-      return OneSignal.getSessionManager().getIndirectNotificationIds();
-   }
-
    public static void OneSignal_sendPurchases(JSONArray purchases, boolean newAsExisting, OneSignalRestClient.ResponseHandler responseHandler) {
       OneSignal.sendPurchases(purchases, newAsExisting, responseHandler);
    }
 
-   public static class OSSessionManager extends com.onesignal.OSSessionManager {
-      public OSSessionManager(@NonNull SessionListener sessionListener) {
-         super(sessionListener);
-      }
+   public static OSSessionManager.SessionListener OneSignal_getSessionListener() {
+      return OneSignal.getSessionListener();
    }
 
-   public static class CachedUniqueOutcomeNotification extends com.onesignal.CachedUniqueOutcomeNotification {
-      public CachedUniqueOutcomeNotification(String notificationId, String name) {
-         super(notificationId, name);
-      }
+   public static void OneSignal_setSharedPreferences(OSSharedPreferences preferences) {
+      OneSignal.setSharedPreferences(preferences);
+   }
 
-      @Override
-      public String getNotificationId() {
-         return super.getNotificationId();
-      }
+   public static void OneSignal_setSessionManager(OSSessionManager sessionManager) {
+      OneSignal.setSessionManager(sessionManager);
+   }
 
-      @Override
-      public String getName() {
-         return super.getName();
-      }
+   public static void OneSignal_setTrackerFactory(OSTrackerFactory trackerFactory) {
+      OneSignal.setTrackerFactory(trackerFactory);
    }
 
    public static JSONObject bundleAsJSONObject(Bundle bundle) {
@@ -179,8 +162,6 @@ public class OneSignalPackagePrivateHelper {
    }
 
    public static class NotificationTable extends OneSignalDbContract.NotificationTable { }
-   public static class OutcomeEventsTable extends OneSignalDbContract.OutcomeEventsTable { }
-   public static class CachedUniqueOutcomeNotificationTable extends OneSignalDbContract.CachedUniqueOutcomeNotificationTable { }
    public static class InAppMessageTable extends OneSignalDbContract.InAppMessageTable { }
    public static class NotificationRestorer extends com.onesignal.NotificationRestorer { }
    public static class NotificationGenerationJob extends com.onesignal.NotificationGenerationJob {
@@ -226,21 +207,31 @@ public class OneSignalPackagePrivateHelper {
       NotificationSummaryManager.updateSummaryNotificationAfterChildRemoved(context, writableDb, group, dismissed);
    }
 
-   public class OneSignalPrefs extends com.onesignal.OneSignalPrefs {}
+   public class TestOneSignalPrefs extends com.onesignal.OneSignalPrefs {}
 
    public static void OneSignal_onAppLostFocus() {
       OneSignal.onAppLostFocus();
    }
 
-   public static DelayedConsentInitializationParameters OneSignal_delayedInitParams() { return OneSignal.delayedInitParams; }
+   public static DelayedConsentInitializationParameters OneSignal_delayedInitParams() {
+      return OneSignal.delayedInitParams;
+   }
 
-   public static boolean OneSignal_requiresUserPrivacyConsent() { return OneSignal.requiresUserPrivacyConsent; }
+   public static boolean OneSignal_requiresUserPrivacyConsent() {
+      return OneSignal.requiresUserPrivacyConsent;
+   }
 
-   public static String OneSignal_appId() { return OneSignal.appId; }
+   public static String OneSignal_appId() {
+      return OneSignal.appId;
+   }
 
-   public static void OneSignal_setAppContext(Context context) { OneSignal.setAppContext(context); }
+   public static void OneSignal_setAppId(String appId) {
+      OneSignal.appId = appId;
+   }
 
-   static public class RemoteOutcomeParams extends com.onesignal.OneSignalRemoteParams.OutcomesParams {
+   static public class OSSharedPreferencesWrapper extends com.onesignal.OSSharedPreferencesWrapper {}
+
+   static public class RemoteOutcomeParams extends OneSignalRemoteParams.InfluenceParams {
 
       public RemoteOutcomeParams() {
          this(true, true, true);
@@ -253,13 +244,22 @@ public class OneSignalPackagePrivateHelper {
       }
    }
 
-   static public class BadgeCountUpdater extends com.onesignal.BadgeCountUpdater {
+   public static SQLiteDatabase OneSignal_getSQLiteDatabase(Context context) {
+      return OneSignalDbHelper.getInstance(context).getSQLiteDatabase();
+   }
+
+   public static void OneSignal_cleanOutcomeDatabaseTable(Context context) {
+      OneSignalDbHelper.cleanOutcomeDatabaseTable(
+              OneSignal_getSQLiteDatabase(context));
+   }
+
+   public static class BadgeCountUpdater extends com.onesignal.BadgeCountUpdater {
       public static void update(SQLiteDatabase readableDb, Context context) {
          com.onesignal.BadgeCountUpdater.update(readableDb, context);
       }
    }
 
-   static public class NotificationLimitManager extends com.onesignal.NotificationLimitManager {
+   public static class NotificationLimitManager extends com.onesignal.NotificationLimitManager {
       public static void clearOldestOverLimitFallback(Context context, int notifsToMakeRoomFor) {
          com.onesignal.NotificationLimitManager.clearOldestOverLimitFallback(context, notifsToMakeRoomFor);
       }
@@ -276,7 +276,7 @@ public class OneSignalPackagePrivateHelper {
    public static class OSTestInAppMessage extends com.onesignal.OSInAppMessage {
 
       public OSTestInAppMessage(@NonNull String messageId, int displaysQuantity, long lastDisplayTime, boolean displayed, Set<String> clickIds) {
-         super(messageId, clickIds, displayed, new OSInAppMessageDisplayStats(displaysQuantity, lastDisplayTime));
+         super(messageId, clickIds, displayed, new OSInAppMessageRedisplayStats(displaysQuantity, lastDisplayTime));
       }
 
       OSTestInAppMessage(JSONObject json) throws JSONException {
@@ -340,8 +340,13 @@ public class OneSignalPackagePrivateHelper {
       }
 
       @Override
-      public OSTestInAppMessageDisplayStats getDisplayStats() {
-         return new OSTestInAppMessageDisplayStats(super.getDisplayStats());
+      public OSTestInAppMessageDisplayStats getRedisplayStats() {
+         return new OSTestInAppMessageDisplayStats(super.getRedisplayStats());
+      }
+
+      @Override
+      public void setRedisplayStats(int displayQuantity, long lastDisplayTime) {
+         super.setRedisplayStats(displayQuantity, lastDisplayTime);
       }
 
       public JSONObject toJSONObject() {
@@ -349,16 +354,16 @@ public class OneSignalPackagePrivateHelper {
       }
    }
 
-   public static class OSTestInAppMessageDisplayStats extends com.onesignal.OSInAppMessageDisplayStats {
+   public static class OSTestInAppMessageDisplayStats extends OSInAppMessageRedisplayStats {
 
-      private OSInAppMessageDisplayStats displayStats;
+      private OSInAppMessageRedisplayStats displayStats;
 
-      OSTestInAppMessageDisplayStats(OSInAppMessageDisplayStats displayStats) {
+      OSTestInAppMessageDisplayStats(OSInAppMessageRedisplayStats displayStats) {
          this.displayStats = displayStats;
       }
 
       @Override
-      public void setDisplayStats(OSInAppMessageDisplayStats displayStats) {
+      public void setDisplayStats(OSInAppMessageRedisplayStats displayStats) {
          this.displayStats.setDisplayStats(displayStats);
       }
 
@@ -477,7 +482,7 @@ public class OneSignalPackagePrivateHelper {
       for (OSInAppMessage message : messages) {
          try {
             OSTestInAppMessage testInAppMessage = new OSTestInAppMessage(message);
-            testInAppMessage.getDisplayStats().setDisplayStats(message.getDisplayStats());
+            testInAppMessage.getRedisplayStats().setDisplayStats(message.getRedisplayStats());
             testMessages.add(testInAppMessage);
 
          } catch (JSONException e) {
@@ -489,6 +494,10 @@ public class OneSignalPackagePrivateHelper {
 
    public static boolean hasConfigChangeFlag(Activity activity, int configChangeFlag) {
       return OSUtils.hasConfigChangeFlag(activity, configChangeFlag);
+   }
+
+   public static int getDeviceType() {
+      return new OSUtils().getDeviceType();
    }
 
    public abstract class UserState extends com.onesignal.UserState {
@@ -517,4 +526,12 @@ public class OneSignalPackagePrivateHelper {
 
 
    }
+
+   public static class GenerateNotification extends com.onesignal.GenerateNotification {}
+
+   public static class NotificationBundleProcessor extends com.onesignal.NotificationBundleProcessor {}
+
+   public static class OSNotificationFormatHelper extends com.onesignal.OSNotificationFormatHelper {}
+
+   public static class NotificationPayloadProcessorHMS extends com.onesignal.NotificationPayloadProcessorHMS {}
 }
